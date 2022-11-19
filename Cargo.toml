@@ -1,0 +1,13 @@
+[package]
+name = "seng480b-group-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0.147", features = ["derive"] }
+csv = "1.1.6"
+git2 = "0.15.0"
+regex = "1.7.0"
+rayon = "1.5.3"
+thiserror = "1.0.37"
+chrono = "0.4.23"

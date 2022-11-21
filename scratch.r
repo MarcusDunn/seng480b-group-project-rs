@@ -29,5 +29,3 @@ count(master)
 mean(master$indentation)
 
 t.test(filter(master, declaration_type=="Type")$indentation, filter(master, declaration_type=="Var")$indentation, var.equal = FALSE)
-
-master_anova = lm(indentation ~ declaration_type, data=master)?

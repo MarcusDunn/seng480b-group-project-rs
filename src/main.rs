@@ -30,7 +30,7 @@ const REPOSITORIES: [&str; 15] = [
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let java_9_release_day = Utc.with_ymd_and_hms(2017, 8, 1, 0, 0, 0).unwrap();
+    let java_9_release_day = Utc.with_ymd_and_hms(2018, 3, 20, 0, 0, 0).unwrap();
     let repositories = REPOSITORIES
         .into_par_iter()
         .map(download_or_use_cache)
@@ -82,6 +82,8 @@ struct CsvColumn<'a> {
     seconds_since_epoch: i64,
     commit_hash: String,
     file_name: String,
+    project_name: &'a str,
+    commiter: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -109,27 +111,28 @@ impl From<char> for CsvColumnDiffType {
 
 fn to_csv<'a>(
     repository: &'a Repository,
-    diffs: impl Iterator<Item = Result<(Commit<'a>, Diff<'a>), Error>>,
+    diffs: impl Iterator<Item=Result<(Commit<'a>, Diff<'a>), Error>>,
 ) -> Result<File, ToCsvError> {
     let var_declaration =
         Regex::new(r#".*var\s+[_a-zA-Z][_$a-zA-Z0-9]*\s*=.*"#).expect("regex is not valid");
     let declaration =
-        Regex::new(r#"[^<#{]*[_a-zA-Z][_$a-zA-Z0-9<>]*\s+[_a-zA-Z][_$a-zA-Z0-9]*\s*=\s*.*"#)
+        Regex::new(r#"[^"<#{]*[_a-zA-Z][_$a-zA-Z0-9<>]*\s+[_a-zA-Z][_$a-zA-Z0-9]*\s*=\s*.*"#)
             .expect("regex is not valid");
-    let mut file = csv::WriterBuilder::new().has_headers(true).from_writer(
-        File::options().create(true).write(true).open(
-            repository
-                .workdir()
-                .expect("repo does not have a working directory")
-                .to_str()
-                .expect("repo is not valid utf8")
-                .split('/')
-                .filter(|s| !s.is_empty())
-                .last()
-                .expect("there were no non-empty segments in the working directory")
-                .to_string()
-                + ".csv",
-        )?,
+    let project_name = repository
+        .workdir()
+        .expect("repo does not have a working directory")
+        .to_str()
+        .expect("repo is not valid utf8")
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .last()
+        .expect("there were no non-empty segments in the working directory")
+        .to_string();
+    let file = File::options().create(true).write(true).open(
+        project_name.clone() + ".csv",
+    )?;
+    let mut file_writer = csv::WriterBuilder::new().has_headers(true).from_writer(
+        file,
     );
     for result in diffs {
         match result {
@@ -149,7 +152,7 @@ fn to_csv<'a>(
                         _ => return true,
                     };
                     if declaration.is_match(line_str) {
-                        file.serialize(CsvColumn {
+                        file_writer.serialize(CsvColumn {
                             diff_type: CsvColumnDiffType::from(line.origin()),
                             line_content: line_str,
                             declaration_type: if var_declaration.is_match(line_str) {
@@ -175,19 +178,21 @@ fn to_csv<'a>(
                                 .flatten()
                                 .expect("no file")
                                 .to_string(),
+                            project_name: &project_name,
+                            commiter: commit.committer().name(),
                         })
-                        .expect("failed to serialize a CsvColumn");
+                            .expect("failed to serialize a CsvColumn");
                     }
                     true
                 })
-                .expect("ended printing early");
+                    .expect("ended printing early");
             }
             Err(error) => {
                 eprintln!("diff error {}", error)
             }
         }
     }
-    file.into_inner().map_err(|_| IntoInner)
+    file_writer.into_inner().map_err(|_| IntoInner)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -224,7 +229,7 @@ enum DiffsError {
 fn diffs<'a, 'b: 'a>(
     repo: &'a Repository,
     since: &'b DateTime<Utc>,
-) -> Result<impl Iterator<Item = Result<(Commit<'a>, Diff<'a>), Error>>, DiffsError> {
+) -> Result<impl Iterator<Item=Result<(Commit<'a>, Diff<'a>), Error>>, DiffsError> {
     let mut revwalk = repo.revwalk()?;
     revwalk.push_head()?;
     revwalk.set_sorting(Sort::TIME)?;
@@ -248,7 +253,7 @@ fn diffs<'a, 'b: 'a>(
                     parent.tree().ok().as_ref(),
                     None,
                 )
-                .map(|diff| (commit, diff))
+                    .map(|diff| (commit, diff))
             })
         }))
 }
